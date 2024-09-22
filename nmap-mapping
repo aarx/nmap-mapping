@@ -5,13 +5,17 @@ import time
 import concurrent.futures
 
 def extract_service(output):
-    service_match = re.search(r'(\d+/tcp)\s+(\S+)\s+([a-zA-Z0-9?]+)', output)
+    """
+    Extracts port, service, state, and version information from the Nmap output.
+    """
+    service_match = re.search(r'(\d+/tcp)\s+(\S+)\s+([a-zA-Z0-9?]+)\s*(.*)', output)
     if service_match:
         port = service_match.group(1)
         state = service_match.group(2)  # Capture the state
         service = service_match.group(3)  # Capture the service name
-        return port, service, state
-    return "", "", ""
+        version = service_match.group(4).strip() if service_match.group(4) else "N/A"  # Capture the version
+        return port, service, state, version
+    return "", "", "", ""
 
 def is_port_reachable(ip, port):
     command = f'nmap -sV -Pn -n -p {port} {ip}'
@@ -34,6 +38,7 @@ def update_availability_excel(excel_file_path, batch_size=5):
     service_column_index = headers.index('Service') + 1  # Excel is 1-indexed
     availability_column_index = headers.index('Availability') + 1
     time_required_column_index = headers.index('Time-Required') + 1
+    version_column_index = headers.index('Version') + 1  # Assuming 'Version' column exists
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as executor:
         futures_to_row_index = {}
@@ -48,16 +53,17 @@ def update_availability_excel(excel_file_path, batch_size=5):
             row_index, ip, port = futures_to_row_index[future]
             try:
                 reachable, nmap_output, time_taken = future.result()
-                port, service, state = extract_service(nmap_output)
-                # Directly use the extracted state for the 'Availability' field
+                port, service, state, version = extract_service(nmap_output)
+                # Update the Excel sheet with extracted details
                 sheet.cell(row=row_index, column=availability_column_index, value=state)
                 sheet.cell(row=row_index, column=service_column_index, value=service)
+                sheet.cell(row=row_index, column=version_column_index, value=version)  # Adding version information
                 sheet.cell(row=row_index, column=time_required_column_index, value=time_taken)
             except Exception as e:
                 print(f"An error occurred while processing IP {ip}, Port {port}: {e}")
 
     workbook.save(excel_file_path)
-    print("Excel sheet updated with Availability, Service, and Time-Required.")
+    print("Excel sheet updated with Availability, Service, Version, and Time-Required.")
 
 if __name__ == "__main__":
     excel_file_path = "/home/asrivastava147/testscripts/process-related/finals/gold_tracker.xlsx"
